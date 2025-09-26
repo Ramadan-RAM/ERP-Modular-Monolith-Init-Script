@@ -1,0 +1,121 @@
+# ===============================
+# ERP Modular Monolith Init Script
+# ===============================
+
+# Base path to create the solution
+$basePath = "E:\All Projects\ERPSys_ModularMonolith"
+$targetFramework = "net8.0"
+
+# Go to base path
+cd $basePath
+
+# Create solution file
+dotnet new sln -n ERPSys_ModularMonolith
+
+# Define projects
+$projects = @(
+    "ERP.API",
+
+    "HR/HR.Presentation",
+    "HR/HR.Application",
+    "HR/HR.Domain",
+    "HR/HR.Infrastructure",
+
+    "Users/Users.Presentation",
+    "Users/Users.Application",
+    "Users/Users.Domain",
+    "Users/Users.Infrastructure",
+
+    "CRM/CRM.Presentation",
+    "CRM/CRM.Application",
+    "CRM/CRM.Domain",
+    "CRM/CRM.Infrastructure",
+
+    "Finance/Finance.Presentation",
+    "Finance/Finance.Application",
+    "Finance/Finance.Domain",
+    "Finance/Finance.Infrastructure",
+
+    "Logging/Logging.Presentation",
+    "Logging/Logging.Application",
+    "Logging/Logging.Domain",
+    "Logging/Logging.Infrastructure",
+
+    "SharedKernel/ERPSys.SharedKernel"
+)
+
+# Function to get project type
+function GetProjectType($name) {
+    if ($name -like "*API" -or $name -like "*.Presentation") { return "webapi" }
+    else { return "classlib" }
+}
+
+# Create projects
+foreach ($proj in $projects) {
+    $projPath = Join-Path $basePath $proj
+    $projName = Split-Path $proj -Leaf
+    $projType = GetProjectType $projName
+
+    dotnet new $projType -n $projName -o $projPath
+    dotnet sln add "$projPath\$projName.csproj"
+
+    # Set TargetFramework
+    (Get-Content "$projPath\$projName.csproj") -replace "<TargetFramework>.*</TargetFramework>", "<TargetFramework>$targetFramework</TargetFramework>" | Set-Content "$projPath\$projName.csproj"
+}
+
+# Add references between layers
+$modules = @("HR", "Users", "CRM", "Finance", "Logging")
+
+foreach ($module in $modules) {
+    $presentation = "$basePath\$module\$module.Presentation\$module.Presentation.csproj"
+    $application  = "$basePath\$module\$module.Application\$module.Application.csproj"
+    $domain       = "$basePath\$module\$module.Domain\$module.Domain.csproj"
+    $infrastructure = "$basePath\$module\$module.Infrastructure\$module.Infrastructure.csproj"
+
+    # Presentation → Application
+    dotnet add $presentation reference $application
+
+    # Application → Domain
+    dotnet add $application reference $domain
+
+    # Infrastructure → Application + Domain
+    dotnet add $infrastructure reference $application
+    dotnet add $infrastructure reference $domain
+}
+
+# Add references to ERP.API
+$apiProj = "$basePath\ERP.API\ERP.API.csproj"
+$apiRefs = @(
+    "HR/HR.Presentation",
+    "Users/Users.Presentation",
+    "CRM/CRM.Presentation",
+    "Finance/Finance.Presentation",
+    "Logging/Logging.Presentation",
+    "SharedKernel/ERPSys.SharedKernel"
+)
+
+foreach ($ref in $apiRefs) {
+    dotnet add $apiProj reference "$basePath\$ref\$(Split-Path $ref -Leaf).csproj"
+}
+
+# 🧱 Install common NuGet packages in ERP.API
+$packages = @(
+    "Microsoft.EntityFrameworkCore.SqlServer",
+    "Microsoft.EntityFrameworkCore.Tools",
+    "AutoMapper.Extensions.Microsoft.DependencyInjection",
+    "Microsoft.AspNetCore.Authentication.JwtBearer",
+    "System.IdentityModel.Tokens.Jwt",
+    "BCrypt.Net-Next",
+    "Swashbuckle.AspNetCore",
+    "Swashbuckle.AspNetCore.Annotations",
+    "EPPlus",
+    "MediatR",
+    "RabbitMQ.Client"
+)
+
+foreach ($pkg in $packages) {
+    dotnet add $apiProj package $pkg
+}
+
+# Install EF tool globally if not installed
+dotnet tool install --global dotnet-ef
